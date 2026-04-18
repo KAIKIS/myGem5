@@ -1,0 +1,7 @@
+Import('*')
+
+SimObject('MyCHICache.py', sim_objects=['MyCHICache'])
+
+Source('my_chi_cache.cc')
+
+DebugFlag('MyCHICache', 'Debug prints for custom CHI cache')
