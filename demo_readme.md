@@ -537,3 +537,133 @@ gem5 CHI 中，data 消息的 `usesTxnId=false`，但 txnId 值仍然被保留�
 ### 5. 缓存命中时为什么用缓存数据而非重新访问内存
 
 当 CustomCache 命中时（`entry.valid == true`），直接使用 `entry.data`（缓存中的数据）通过 `sendCompData` 返回给 L1，不需要访问内存。这与标准缓存行为一致——命中时数据来自缓存而不是下级存储。
+
+---
+
+## 测试方式
+
+### 快速测试（Hello World）
+
+最简单的验证方式，确认整个中间件架构端到端运行正常：
+
+```bash
+# 编译
+scons build/ARM/gem5.opt -j$(nproc)
+
+# 运行（默认无调试输出）
+./build/ARM/gem5.opt configs/example/arm/chi_my_cache_hierarchy.py
+```
+
+预期输出末尾：
+
+```
+Hello world!
+Exiting @ tick 18446744073709551615 because simulate() limit reached
+```
+
+### 调试模式运行
+
+开启 gem5 调试输出，观察各层消息转换：
+
+```bash
+# 开启 MyCHICache 调试标志（CustomCache / CustomMemory 日志）
+./build/ARM/gem5.opt --debug-flags=MyCHICache configs/example/arm/chi_my_cache_hierarchy.py
+
+# 开启 Ruby 协议调试（gem5 CHI 消息详情）
+./build/ARM/gem5.opt --debug-flags=ProtocolTrace configs/example/arm/chi_my_cache_hierarchy.py
+
+# 开启 Ruby 队列调试（MessageBuffer 收发）
+./build/ARM/gem5.opt --debug-flags=RubyQueue configs/example/arm/chi_my_cache_hierarchy.py
+
+# 开启端口调试（Ruby Sequencer 收发请求）
+./build/ARM/gem5.opt --debug-flags=RubyPort configs/example/arm/chi_my_cache_hierarchy.py
+
+# 组合多个调试标志
+./build/ARM/gem5.opt --debug-flags=MyCHICache,RubyPort configs/example/arm/chi_my_cache_hierarchy.py
+
+# 输出到文件（推荐，调试输出量很大）
+./build/ARM/gem5.opt --debug-flags=MyCHICache --debug-file=debug.log configs/example/arm/chi_my_cache_hierarchy.py
+```
+
+### 常用调试标志速查
+
+| 标志 | 作用 | 观察内容 |
+|------|------|----------|
+| `MyCHICache` | CustomCache / CustomMemory 日志 | 缓存命中/未命中、内存读写 |
+| `ProtocolTrace` | CHI 协议消息跟踪 | gem5 CHI 消息类型和地址 |
+| `RubyQueue` | MessageBuffer 收发 | 消息入队/出队时序 |
+| `RubyPort` | Ruby Sequencer | CPU 请求映射到 Ruby |
+| `RubyNetwork` | Ruby 网络传输 | 消息路由和链路 |
+| `CHI` | CHI 协议状态机 | SLICC 状态转换详情 |
+
+### 性能统计
+
+gem5 自动输出统计信息（无须额外配置）：
+
+```bash
+./build/ARM/gem5.opt configs/example/arm/chi_my_cache_hierarchy.py
+# 运行后查看 m5out/stats.txt
+cat m5out/stats.txt
+```
+
+关键指标：
+
+| 指标 | 说明 |
+|------|------|
+| `sim_seconds` | 模拟耗时（秒） |
+| `sim_ticks` | 模拟 tick 数 |
+| `system.cpu.numCycles` | CPU 周期数 |
+| `system.ruby.m_cntrl.L1Cache.*.demandHits` | L1 命中次数 |
+| `system.ruby.m_cntrl.L1Cache.*.demandMisses` | L1 未命中次数 |
+| `system.ruby.m_cntrl.L1Cache.*.demandAccesses` | L1 总访问次数 |
+
+### 配置修改
+
+修改 `configs/example/arm/chi_my_cache_hierarchy.py` 中的参数进行不同测试：
+
+```python
+# 修改核心数
+processor = SimpleProcessor(
+    cpu_type=CPUTypes.TIMING,
+    isa=ISA.ARM,
+    num_cores=2,          # 改为 2 核
+)
+
+# 修改 L1 缓存大小
+cache_hierarchy = MyCHICacheHierarchy(
+    l1_size="128KiB",     # 改为 128KB
+    l1_assoc=4,           # 改为 4 路
+)
+
+# 修改内存大小
+memory = SingleChannelDDR3_1600(size="128MiB")  # 改为 128MB
+```
+
+### 运行自定义测试程序
+
+默认运行 `tests/test-progs/hello/bin/arm/linux/hello`。如需使用其他程序，修改配置文件中的 binary 路径：
+
+```python
+# 在 chi_my_cache_hierarchy.py 底部修改
+board.set_se_binary_workload(
+    binary=BinaryResource("/path/to/your/binary"),
+)
+```
+
+### 常见问题排查
+
+**1. 编译报错 `Unknown type CHIMiddleware`**
+
+确认 `src/mem/my_l2/SConscript` 中 `SimObject('CHIMiddleware.py', sim_objects=['CHIMiddleware'])` 存在，然后重新编译。
+
+**2. 运行时 panic `Invalid transition`**
+
+通常是 SLICC 状态机收到意外的消息类型。开启 `--debug-flags=CHI` 查看状态转换详情，对照 CHI 协议规范定位问题。
+
+**3. 输出全零或死锁**
+
+确认 memory 请求是否走 gem5 MemCtrl（`sendToMemory` 回调中 ReadNoSnp/WriteNoSnp 走 `sendRequestToGem5`）。用 `--debug-flags=RubyPort` 检查 dcache sequencer 是否有 "Timing request" 输出。
+
+**4. 数据 chunk 丢失**
+
+检查 `lastChunk` 判断逻辑：`convertData` 中应为 `(offset + copied >= cacheLineSize)` 而非硬编码 `true`。开启 `--debug-flags=MyCHICache` 观察 chunk 发送日志。
