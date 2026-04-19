@@ -67,6 +67,8 @@ MyCHICache::recvRequestMsg(const CHI::CHIRequestMsg *msg)
         txn.addr = addr;
         pendingWrites[txnId] = txn;
 
+        cprintf("%s: *** WRITEBACK type=%s addr=%#x txnId=%#x reqid=%d ***\n",
+                name(), type_str, addr, txnId, requestor.getNum());
         sendCompDBIDResp(addr, requestor, txnId);
         break;
       }
@@ -312,9 +314,9 @@ MyCHICache::sendDataToL1(Addr addr, const MachineID &dest,
     dat->setusesTxnId(false);
     dat->setbitMask(bitMask);
 
-    cprintf("%s: ->L1 %s addr=%#x dest=%d\n",
+    cprintf("%s: ->L1 %s addr=%#x dest=%d bitmask.count=%d tick=%llu\n",
             name(), CHIDataType_to_string(dataType), addr,
-            dest.getNum());
+            dest.getNum(), bitMask.count(), (unsigned long long)curTick());
     sendDataMsg(dat);
 }
 

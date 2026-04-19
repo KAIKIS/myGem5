@@ -20,7 +20,7 @@ from itertools import chain
 import m5
 from m5.objects import (
     MessageBuffer,
-    MyCHICache,
+    CHIMiddleware,
     NULL,
     RubyPortProxy,
     RubySequencer,
@@ -136,11 +136,11 @@ class MyCHICacheHierarchy(AbstractRubyCacheHierarchy):
         )
         board.connect_system_port(self.ruby_system.sys_port_proxy.in_ports)
 
-    def _create_my_chi_cache(self, board: AbstractBoard) -> MyCHICache:
-        """创建MyCHICache，使用与AbstractNode.connectQueues相同的模式"""
+    def _create_my_chi_cache(self, board: AbstractBoard) -> CHIMiddleware:
+        """创建CHIMiddleware，使用与AbstractNode.connectQueues相同的模式"""
         network = self.ruby_system.network
 
-        cache = MyCHICache(
+        cache = CHIMiddleware(
             version=AbstractNode._version,
             data_channel_size=32,
         )
@@ -280,7 +280,7 @@ board.set_se_binary_workload(
 print("=" * 60)
 print("CHI + MyCHICache demo")
 print(f"Binary: {binpath}")
-print("Architecture: CPU -> L1(CHI) -> Network -> MyCHICache(你的实现) -> Mem(CHI)")
+print("Architecture: CPU -> L1(CHI) -> Network -> CHIMiddleware -> CustomCache+Memory (纯C++)")
 print("=" * 60)
 
 simulator = Simulator(board=board)

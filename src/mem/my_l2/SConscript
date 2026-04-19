@@ -1,7 +1,11 @@
 Import('*')
 
+SimObject('CHIMiddleware.py', sim_objects=['CHIMiddleware'])
 SimObject('MyCHICache.py', sim_objects=['MyCHICache'])
 
+Source('chi_middleware.cc')
+Source('custom_cache.cc')
+Source('custom_memory.cc')
 Source('my_chi_cache.cc')
 
 DebugFlag('MyCHICache', 'Debug prints for custom CHI cache')
